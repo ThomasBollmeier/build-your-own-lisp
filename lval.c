@@ -205,3 +205,46 @@ Lval* lval_eval_sexpr(Lval* v) {
 	}
 }
 
+Lval* lval_expr(Lval* v) {
+
+	return v->type == LVAL_SEXPR ?
+		lval_eval_sexpr(v) : v;
+
+}
+
+Lval* lval_read(mpc_ast_t* t) {
+
+	if (strstr(t->tag, "number")) return lval_read_num(t);
+
+	if (strstr(t->tag, "symbol")) return lval_sym(t->contents);
+
+	// If root or s-expr create list:
+	Lval* ret = NULL;
+	if (strcmp(t->tag, ">") == 0 || strstr(t->tag, "sexpr")) {
+		ret = lval_sexpr();
+	}
+
+	for (int i=0; i<t->children_num; i++) {
+		mpc_ast_t* child = t->children[i];
+		if (strcmp(child->contents, "(") == 0 ||
+			strcmp(child->contents, ")") == 0 ||
+			strcmp(child->contents, "{") == 0 ||
+			strcmp(child->contents, "}") == 0 ||
+			strcmp(child->contents, "regex") == 0)
+		{
+			continue;
+		}
+		ret = lval_add(ret, lval_read(child));
+	}
+
+	return ret;
+}
+
+Lval* lval_read_num(mpc_ast_t* t) {
+	errno = 0;
+	long value = strtol(t->contents, NULL, 10);
+	return errno != ERANGE ?
+			lval_num(value) :
+			lval_err("invalid number");
+}
+

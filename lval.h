@@ -1,6 +1,8 @@
 #ifndef LVAL_H_
 #define LVAL_H_
 
+#include "mpc.h"
+
 // LVAL types:
 
 typedef enum {
@@ -36,5 +38,8 @@ void lval_expr_print(Lval* v, char open, char close);
 Lval* lval_builtin_op(Lval* v, const char* op);
 Lval* lval_eval(Lval* v);
 Lval* lval_eval_sexpr(Lval* v);
+Lval* lval_expr(Lval* v);
+Lval* lval_read(mpc_ast_t* t);
+Lval* lval_read_num(mpc_ast_t* t);
 
 #endif /* LVAL_H_ */
