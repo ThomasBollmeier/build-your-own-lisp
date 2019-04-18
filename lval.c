@@ -21,8 +21,8 @@ Lval* lval_err(const char* msg) {
 Lval* lval_sym(const char* symbol) {
 	Lval* v = (Lval*) malloc(sizeof(Lval));
 	v->type = LVAL_SYM;
-	v->err = malloc(strlen(symbol) + 1);
-	strcpy(v->err, symbol);
+	v->sym = malloc(strlen(symbol) + 1);
+	strcpy(v->sym, symbol);
 	return v;
 }
 
@@ -170,7 +170,10 @@ Lval* lval_builtin_op(Lval* v, const char* op) {
 }
 
 Lval* lval_eval(Lval* v) {
-	return NULL;
+
+	return v->type == LVAL_SEXPR ?
+		lval_eval_sexpr(v) : v;
+
 }
 
 Lval* lval_eval_sexpr(Lval* v) {
@@ -205,13 +208,6 @@ Lval* lval_eval_sexpr(Lval* v) {
 	}
 }
 
-Lval* lval_expr(Lval* v) {
-
-	return v->type == LVAL_SEXPR ?
-		lval_eval_sexpr(v) : v;
-
-}
-
 Lval* lval_read(mpc_ast_t* t) {
 
 	if (strstr(t->tag, "number")) return lval_read_num(t);
@@ -230,7 +226,7 @@ Lval* lval_read(mpc_ast_t* t) {
 			strcmp(child->contents, ")") == 0 ||
 			strcmp(child->contents, "{") == 0 ||
 			strcmp(child->contents, "}") == 0 ||
-			strcmp(child->contents, "regex") == 0)
+			strcmp(child->tag, "regex") == 0)
 		{
 			continue;
 		}
