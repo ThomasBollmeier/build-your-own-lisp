@@ -3,34 +3,43 @@
 #include <string.h>
 #include <stdlib.h>
 
+typedef void (*operator_assign_fn_t) (Lval* lhs, Lval* rhs, Lval** error);
+
 Lval* lval_num(long n) {
 	Lval* v = (Lval*) malloc(sizeof(Lval));
 	v->type = LVAL_NUM;
-	v->num = n;
+	v->data.num = n;
+	return v;
+}
+
+Lval* lval_decimal(double x) {
+	Lval* v = (Lval*) malloc(sizeof(Lval));
+	v->type = LVAL_DECIMAL;
+	v->data.dec = x;
 	return v;
 }
 
 Lval* lval_err(const char* msg) {
 	Lval* v = (Lval*) malloc(sizeof(Lval));
 	v->type = LVAL_ERR;
-	v->err = malloc(strlen(msg) + 1);
-	strcpy(v->err, msg);
+	v->data.err = malloc(strlen(msg) + 1);
+	strcpy(v->data.err, msg);
 	return v;
 }
 
 Lval* lval_sym(const char* symbol) {
 	Lval* v = (Lval*) malloc(sizeof(Lval));
 	v->type = LVAL_SYM;
-	v->sym = malloc(strlen(symbol) + 1);
-	strcpy(v->sym, symbol);
+	v->data.sym = malloc(strlen(symbol) + 1);
+	strcpy(v->data.sym, symbol);
 	return v;
 }
 
 Lval* lval_sexpr(void) {
 	Lval* v = (Lval*) malloc(sizeof(Lval));
 	v->type = LVAL_SEXPR;
-	v->count = 0;
-	v->cell = NULL;
+	v->data.sexpr.count = 0;
+	v->data.sexpr.cell = NULL;
 	return v;
 }
 
@@ -38,19 +47,20 @@ void lval_del(Lval* v) {
 
 	switch(v->type) {
 	case LVAL_NUM:
+	case LVAL_DECIMAL:
 		break;
 	case LVAL_SYM:
-		free(v->sym);
+		free(v->data.sym);
 		break;
 	case LVAL_ERR:
-		free(v->err);
+		free(v->data.err);
 		break;
 	case LVAL_SEXPR:
-		if (v->cell != NULL) {
-			for (int i=0; i<v->count; i++) {
-				lval_del(v->cell[i]);
+		if (v->data.sexpr.cell != NULL) {
+			for (int i=0; i<v->data.sexpr.count; i++) {
+				lval_del(v->data.sexpr.cell[i]);
 			}
-			free(v->cell);
+			free(v->data.sexpr.cell);
 		}
 		break;
 	}
@@ -60,20 +70,20 @@ void lval_del(Lval* v) {
 
 Lval* lval_add(Lval* v, Lval* item) {
 
-	v->count++;
-	v->cell = (Lval**) realloc(v->cell, sizeof(Lval*) * v->count);
-	v->cell[v->count-1] = item;
+	v->data.sexpr.count++;
+	v->data.sexpr.cell = (Lval**) realloc(v->data.sexpr.cell, sizeof(Lval*) * v->data.sexpr.count);
+	v->data.sexpr.cell[v->data.sexpr.count-1] = item;
 
 	return v;
 }
 
 Lval* lval_pop(Lval* v, int i) {
 
-	Lval* ret = v->cell[i];
+	Lval* ret = v->data.sexpr.cell[i];
 	// shift memory:
-	memmove(v->cell+i, v->cell+i+1, sizeof(Lval*) * (v->count - i - 1));
-	v->count--;
-	v->cell = (Lval**) realloc(v->cell, sizeof(Lval*) * v->count);
+	memmove(v->data.sexpr.cell+i, v->data.sexpr.cell+i+1, sizeof(Lval*) * (v->data.sexpr.count - i - 1));
+	v->data.sexpr.count--;
+	v->data.sexpr.cell = (Lval**) realloc(v->data.sexpr.cell, sizeof(Lval*) * v->data.sexpr.count);
 
 	return ret;
 }
@@ -90,13 +100,16 @@ void lval_print(Lval* v) {
 
 	switch(v->type) {
 	case LVAL_NUM:
-		printf("%li", v->num);
+		printf("%li", v->data.num);
+		break;
+	case LVAL_DECIMAL:
+		printf("%lf", v->data.dec);
 		break;
 	case LVAL_SYM:
-		printf("%s", v->sym);
+		printf("%s", v->data.sym);
 		break;
 	case LVAL_ERR:
-		printf("%s", v->err);
+		printf("%s", v->data.err);
 		break;
 	case LVAL_SEXPR:
 		lval_expr_print(v, '(', ')');
@@ -114,9 +127,9 @@ void lval_expr_print(Lval* v, char open, char close) {
 
 	putchar(open);
 
-	for (int i=0; i<v->count; i++) {
-		lval_print(v->cell[i]);
-		if (i != v->count-1) {
+	for (int i=0; i<v->data.sexpr.count; i++) {
+		lval_print(v->data.sexpr.cell[i]);
+		if (i != v->data.sexpr.count-1) {
 			putchar(' ');
 		}
 	}
@@ -125,42 +138,212 @@ void lval_expr_print(Lval* v, char open, char close) {
 
 }
 
+static void lval_add_assign(Lval* l, Lval* r, Lval** error) {
+
+	switch (l->type) {
+	case LVAL_NUM:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.num += r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.num += (long) r->data.dec;
+			break;
+		}
+		break;
+	case LVAL_DECIMAL:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.dec += r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.dec += r->data.dec;
+			break;
+		}
+		break;
+	}
+}
+
+static void lval_sub_assign(Lval* l, Lval* r, Lval** error) {
+
+	switch (l->type) {
+	case LVAL_NUM:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.num -= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.num -= (long) r->data.dec;
+			break;
+		}
+		break;
+	case LVAL_DECIMAL:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.dec -= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.dec -= r->data.dec;
+			break;
+		}
+		break;
+	}
+
+}
+
+static void lval_mul_assign(Lval* l, Lval* r, Lval** error) {
+
+	switch (l->type) {
+	case LVAL_NUM:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.num *= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.num *= (long) r->data.dec;
+			break;
+		}
+		break;
+	case LVAL_DECIMAL:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.dec *= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.dec *= r->data.dec;
+			break;
+		}
+		break;
+	}
+
+}
+
+static void lval_div_assign(Lval* l, Lval* r, Lval** error) {
+
+	int is_zero = 0;
+
+	switch (r->type) {
+	case LVAL_NUM:
+		is_zero = r->data.num == 0L ? 1 : 0;
+		break;
+	case LVAL_DECIMAL:
+		is_zero = fabs(r->data.dec) < EPS ? 1 : 0;
+		break;
+	}
+
+	if (is_zero) {
+		if (error != NULL) {
+			*error = lval_err("Division by zero");
+		}
+		return;
+	}
+
+	switch (l->type) {
+	case LVAL_NUM:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.num /= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.num /= (long) r->data.dec;
+			break;
+		}
+		break;
+	case LVAL_DECIMAL:
+		switch (r->type) {
+		case LVAL_NUM:
+			l->data.dec /= r->data.num;
+			break;
+		case LVAL_DECIMAL:
+			l->data.dec /= r->data.dec;
+			break;
+		}
+		break;
+	}
+
+}
+
+static void lval_mod_assign(Lval* l, Lval* r, Lval** error) {
+
+	if (l->type != LVAL_NUM || r->type != LVAL_NUM) {
+		if (error != NULL) {
+			*error = lval_err("Module operation requires integer numbers");
+		}
+		return;
+	}
+
+	if (r->data.num == 0) {
+		if (error != NULL) {
+			*error = lval_err("Module operation not defined for zero divisor");
+		}
+		return;
+	}
+
+	l->data.num %= r->data.num;
+
+}
+
 Lval* lval_builtin_op(Lval* v, const char* op) {
 
-	// Ensure that there are only numbers:
-	for (int i=0; i<v->count; i++) {
-		if (v->cell[i]->type != LVAL_NUM) {
+	int has_decimals = 0;
+
+	// Ensure that there are only numbers or decimals:
+	for (int i=0; i<v->data.sexpr.count; i++) {
+		if (v->data.sexpr.cell[i]->type != LVAL_NUM &&
+			v->data.sexpr.cell[i]->type != LVAL_DECIMAL) {
 			lval_del(v);
 			return lval_err("Cannot operate on non-number!");
+		} else if (v->data.sexpr.cell[i]->type == LVAL_DECIMAL) {
+			has_decimals = 1;
 		}
 	}
 
-	Lval* ret = lval_pop(v, 0);
+	Lval* ret = NULL;
+	Lval* error = NULL;
+	operator_assign_fn_t opassign = NULL;
 
-	// Check for negative number
-	if (v->count == 0 && strcmp(op, "-") == 0) {
-		ret->num = -ret->num;
+	if (strcmp(op, "+") == 0) {
+		ret = !has_decimals ? lval_num(0L) : lval_decimal(0.0);
+		opassign = lval_add_assign;
+	} else if (strcmp(op, "-") == 0) {
+		ret = !has_decimals ? lval_num(0L) : lval_decimal(0.0);
+		opassign = lval_sub_assign;
+	} else if (strcmp(op, "*") == 0) {
+		ret = !has_decimals ? lval_num(1L) : lval_decimal(1.0);
+		opassign = lval_mul_assign;
+	} else if (strcmp(op, "/") == 0) {
+		opassign = lval_div_assign;
+	} else if (strcmp(op, "%") == 0) {
+		opassign = lval_mod_assign;
 	}
 
-	while (v->count > 0) {
+	while (v->data.sexpr.count > 0) {
+
 		Lval* x = lval_pop(v, 0);
-		// do operation:
-		if (strcmp(op, "+") == 0) {
-			ret->num += x->num;
-		} else if (strcmp(op, "-") == 0) {
-			ret->num -= x->num;
-		} else if (strcmp(op, "*") == 0) {
-			ret->num *= x->num;
-		} else if (strcmp(op, "/") == 0) {
-			if (x->num != 0) {
-				ret->num /= x->num;
+
+		if (ret == NULL) {
+			if (has_decimals) {
+				if (x->type == LVAL_NUM) {
+					ret = lval_decimal((double) x->data.num);
+				} else {
+					ret = lval_decimal(x->data.dec);
+				}
 			} else {
-				lval_del(ret);
-				lval_del(x);
-				ret = lval_err("Division by zero");
-				break;
+				ret = lval_num(x->data.num);
 			}
+			lval_del(x);
+			continue;
 		}
+
+		opassign(ret, x, &error);
+
+		if (error != NULL) {
+			lval_del(x);
+			lval_del(ret);
+			ret = error;
+			break;
+		}
+
 		lval_del(x);
 	}
 
@@ -181,14 +364,14 @@ Lval* lval_eval_sexpr(Lval* v) {
 	Lval* first = NULL;
 
 	// Evaluate children:
-	for (int i=0; i<v->count; i++) {
-		v->cell[i] = lval_eval(v->cell[i]);
-		if (v->cell[i]->type == LVAL_ERR) {
+	for (int i=0; i<v->data.sexpr.count; i++) {
+		v->data.sexpr.cell[i] = lval_eval(v->data.sexpr.cell[i]);
+		if (v->data.sexpr.cell[i]->type == LVAL_ERR) {
 			return lval_take(v, i);
 		}
 	}
 
-	switch (v->count) {
+	switch (v->data.sexpr.count) {
 	case 0:
 		// Empty expression:
 		return v;
@@ -202,13 +385,15 @@ Lval* lval_eval_sexpr(Lval* v) {
 			lval_del(v);
 			return lval_err("S-expression does not start with symbol.");
 		}
-		Lval* ret = lval_builtin_op(v, first->sym);
+		Lval* ret = lval_builtin_op(v, first->data.sym);
 		lval_del(first);
 		return ret;
 	}
 }
 
 Lval* lval_read(mpc_ast_t* t) {
+
+	if (strstr(t->tag, "decimal")) return lval_read_dec(t);
 
 	if (strstr(t->tag, "number")) return lval_read_num(t);
 
@@ -244,3 +429,8 @@ Lval* lval_read_num(mpc_ast_t* t) {
 			lval_err("invalid number");
 }
 
+Lval* lval_read_dec(mpc_ast_t* t) {
+	double x;
+	sscanf(t->contents, "%lf", &x);
+	return lval_decimal(x);
+}

@@ -30,6 +30,7 @@ int add_history(const char* unused) {
 int main(void) {
 
 	mpc_parser_t* Number = mpc_new("number");
+	mpc_parser_t* Decimal = mpc_new("decimal");
 	mpc_parser_t* Symbol = mpc_new("symbol");
 	mpc_parser_t* Sexpr = mpc_new("sexpr");
 	mpc_parser_t* Expr = mpc_new("expr");
@@ -37,11 +38,12 @@ int main(void) {
 
 	mpca_lang(MPCA_LANG_DEFAULT,
 			"number : /-?[0-9]+/;"
-			"symbol : '+' | '-' | '*' | '/';"
+			"decimal: /-?[0-9]+\\.[0-9]+/;"
+			"symbol : '+' | '-' | '*' | '/' | '%';"
 			"sexpr : '(' <expr>* ')';"
-			"expr : <number> | <symbol> | <sexpr>;"
+			"expr : <decimal> | <number> | <symbol> | <sexpr>;"
 			"lispy : /^/ <expr>* /$/;",
-			Number, Symbol, Sexpr, Expr, Lispy);
+			Number, Decimal, Symbol, Sexpr, Expr, Lispy);
 
 	puts("Lispy Version 0.0.0.0.5");
 	puts("Press Ctrl+C to Exit\n");
@@ -67,7 +69,7 @@ int main(void) {
 		printf("\n");
 	}
 
-	mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
+	mpc_cleanup(6, Number, Decimal, Symbol, Sexpr, Expr, Lispy);
 
 	return 0;
 }

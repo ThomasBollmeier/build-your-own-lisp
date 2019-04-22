@@ -3,28 +3,42 @@
 
 #include "mpc.h"
 
+// ACCURACY
+#define EPS 1E-12
+
 // LVAL types:
 
 typedef enum {
 	LVAL_ERR,
 	LVAL_NUM,
+	LVAL_DECIMAL,
 	LVAL_SYM,
 	LVAL_SEXPR
 } LvalType;
+
+struct lval;
+
+typedef struct {
+	int count;
+	struct lval** cell;
+} SexprData;
 
 typedef struct lval {
 
 	LvalType type;
 	// type-specific part
-	long num;
-	char* err;
-	char* sym;
-	int count; // s-expr data
-	struct lval** cell; // s-expr data
+	union {
+		long num;
+		double dec;
+		char* err;
+		char* sym;
+		SexprData sexpr;
+	} data;
 
 } Lval;
 
 Lval* lval_num(long n);
+Lval* lval_decimal(double x);
 Lval* lval_err(const char* msg);
 Lval* lval_sym(const char* symbol);
 Lval* lval_sexpr(void);
@@ -40,5 +54,6 @@ Lval* lval_eval(Lval* v);
 Lval* lval_eval_sexpr(Lval* v);
 Lval* lval_read(mpc_ast_t* t);
 Lval* lval_read_num(mpc_ast_t* t);
+Lval* lval_read_dec(mpc_ast_t* t);
 
 #endif /* LVAL_H_ */
